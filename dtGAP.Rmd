@@ -1,0 +1,208 @@
+---
+title: "Introduction to dtGAP"
+author: "Chia-Yu Chang, Chun-houh Chen and Han-Ming Wu*"
+date: "2025-06-03"
+output: 
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 3
+    number_sections: true  
+
+vignette: >
+  %\VignetteIndexEntry{Introduction to dtGAP}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+	error = FALSE,
+	fig.align = "center",
+	message = FALSE,
+	warning = FALSE,
+	collapse = TRUE,
+	comment = "#>",
+	include = TRUE,
+	out.width = "100%"
+)
+library(knitr)
+library(dplyr)
+library(ComplexHeatmap)
+library(dendextend)
+library(circlize)
+library(reshape2)
+library(grid)
+library(gridExtra)
+library(knitr)
+library(pander)
+library(ggplot2)
+library(ape)
+library(ggdendro)
+library(RColorBrewer)
+library(rpart.plot)
+library(caret)
+library(party)
+library(ggparty)
+library(rpart)
+library(party)
+library(partykit)
+library(C50)
+library(seriation)
+library(treeheatr)
+```
+
+You can download the development version from the website:
+
+```{r install_pkg, echo=TRUE}
+library(dtGAP)
+```
+
+$$\\[0.3in]$$
+
+# Introduction
+
+Decision trees are prized for their simplicity and interpretability but often fail to reveal underlying data structures. Generalized Association Plots (GAP) excel at illustrating complex associations yet are typically unsupervised. We introduce `dtGAP`, a novel framework that embeds **supervised correlation** and distance measures into GAP for enriched **decision-tree visualization**. `dtGAP` offers confusion matrix maps, decision-tree matrix maps, predicted class membership maps, and evaluation panels. The `dtGAP` package is currently available on the Comprehensive R Archive Network (CRAN) at \<\> and \<\>.
+
+**Current version** (build on June 11, 2025): [dtGAP_0.1.1.zip]() $$\\[0.3in]$$
+
+# Selecting Data Subsets and Tree-Based Models
+
+By default `dtGAP` visualizes the entire data, but you can focus on just the training or testing split using the `show` argument, which takes either `'all'`, `'train'` or `'test'`. Similarly, You can choose between two tree models via the `model` argument, which can be either `'rpart'`or `'party'`.
+
+When you choose `model = "rpart"` (classic CART), each node shows its **class-membership probabilities** and display the percentage of samples in each branch.
+
+```{r dtGAP_ex1, echo=TRUE, fig.height=9, fig.width=16}
+dtGAP(data_train = train_covid, data_test = test_covid, target_lab = "Outcome",
+      show = "all")
+```
+
+$$\\[0.3in]$$ In contrast, with `model = "party"` (conditional inference trees), `dtGAP` will annotate each internal node with its **split-variable p-value** and display the percentage of samples in each branch. Also, you can **custom label mapping and colors.**
+
+```{r dtGAP_ex2, echo=TRUE, fig.height=9, fig.width=15}
+dtGAP(data_train = train_covid, data_test = test_covid, target_lab = "Outcome",
+      model = "party",control = ctree_control(minbucket = 15), show = "test",
+      label_map = c("0" = "Survival", "1" = "Death"), 
+      label_map_colors = c("Survival" = "#50046d", "Death" = "#fcc47f"))
+```
+
+$$\\[0.3in]$$
+
+# Computing Row and Column Proximitiy and Seriation
+
+At the beginning, we choose suitable data transformation via `trans_type` argument, which can be either `'none'`, `'percentize'`, `'normalize'`, and `'scale'`.
+
+Before sorting, we build two proximity measures:
+
+-   **Column Proximity** : Calculate a combined conditional correlation matrix weighted by group memberships.
+-   **Row Proximity** : Initially, sort samples by tree leaf. For each leaf, measure supervised distance—combining within-leaf dispersion and between-leaf separation—using linkage `"CT"` (centroid) , `"SG"` (single), or `"CP"` (complete).
+
+Use any method from `seriation` to reorder rows and columns.
+
+```{r seriation option, echo=TRUE, prompt=TRUE}
+seriation::list_seriation_methods("dist")
+```
+
+$$\\[0.3in]$$
+
+Also, when `show = "all"`, use `sort_by_data_type = TRUE` to preserve the original train/test grouping; set it to `FALSE` if you’d rather intermix samples from both sets when ordering.
+
+***how to measure the quality of sorting?***
+
+Then compute the **cRGAR** —an average of node-specific anti-Robinson scores weighted by each node’s sample fraction—to quantify order quality.
+
+-   near 0 means good sorting (ordering the layout closely follows a Robinson structure).
+-   near 1 indicate bad sorting (many violations).
+
+```{r dtGAP_ex3, echo=TRUE, fig.height=9, fig.width=16}
+dtGAP(data_all = Psychosis_Disorder, model = "party", show = "all", 
+      trans_type = "none", target_lab = "UNIQID", 
+      seriate_method = "GW_average", sort_by_data_type = FALSE)
+```
+
+$$\\[0.3in]$$
+
+# Data Information and Metrics
+
+When you set `print_eval = TRUE`, `dtGAP` will append an evaluation panel containing two sections:
+
+-   **Data Information**
+
+    -   Dataset name, model and train/test sample sizes.
+
+    -   Column proximity method, linkage, seriation algorithm and cRGAR score.
+
+-   **Train/Test Metrics**
+
+    -   **Full confusion‐matrix report** (default)\
+        Uses `caret::confusionMatrix()` to show accuracy, kappa, sensitivity, specificity, etc.
+
+    -   **Simple metrics**\
+        If you set `simple_metrics = TRUE`, you’ll instead get six key measures from the **yardstick** package:
+
+        -   Accuracy
+
+        -   Balanced accuracy
+
+        -   Kappa
+
+        -   Precision
+
+        -   Recall
+
+        -   Specificity
+
+```{r dtGAP_ex4, echo=TRUE, fig.height=8, fig.width=16}
+dtGAP(data_all = wine, model = "party", show = "all", trans_type = "scale",
+      target_lab = "y", simple_metrics = TRUE)
+```
+
+$$\\[0.3in]$$
+
+# Customization
+
+-   Variable Importance and split‐variable Labels panel
+
+    -   `col_var_imp` set the bar fill color (e.g. `"orange"`, `"#2c7bb6"`).
+
+    -   `var_imp_bar_width` Adjust bar thickness (default `0.8`).
+
+    -   `var_imp_fontsize` / `split_var_fontsize` Control the font size (default `5`).
+
+    -   `split_var_bg` Background color behind each split‐variable name (default `"darkgreen"`).
+
+-   **Color**
+
+    Define the `RColorBrewer` palette and number of shades.
+
+    -   `Col_Prox_palette` (e.g. `"RdBu"`, `"Viridis"`) and `Col_Prox_n_colors`
+
+    -   `Row_Prox_palette` and `Row_Prox_n_colors`
+
+    -   `sorted_dat_palette` & `sorted_dat_n_colors`
+
+```{r color, fig.height=8, fig.width=8}
+display.brewer.all()
+```
+
+$$\\[0.3in]$$ You can customize the color schemes and font sizes in the visualization to match your preferences.
+
+```{r dtGAP_ex5, echo=TRUE, fig.height=8, fig.width=16}
+dtGAP(data_all = wine, model = "party", show = "all", trans_type = "scale",
+      target_lab = "y", col_var_imp = "blue", split_var_bg = "darkblue",
+      Col_Prox_palette = "RdYlGn", type_palette = "Set2", 
+      Row_Prox_palette = "Spectral",var_imp_fontsize = 7,
+      split_var_fontsize = 7, sorted_dat_palette = "Oranges", 
+      sorted_dat_n_colors = 9, simple_metrics = TRUE)
+```
+
+$$\\[0.3in]$$
+
+You can also choose whether to display the row or column proximity.
+
+```{r dtGAP_ex6, echo=TRUE, fig.height=9, fig.width=16}
+dtGAP(data_all = Psychosis_Disorder, model = "party", show = "all", 
+      trans_type = "none", target_lab = "UNIQID", 
+      seriate_method = "GW_average", sort_by_data_type = FALSE, 
+      show_row_prox = FALSE, show_col_prox = FALSE)
+```
